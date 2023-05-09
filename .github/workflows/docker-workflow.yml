@@ -29,6 +29,7 @@ jobs:
       - name: Variables
         id: vars
         run: |
+          echo "${{steps.package_lock_json.outputs.packageLockJson}}"
           sharp_version="${{ fromJSON(steps.package_lock_json.outputs.packageLockJson).dependencies.sharp.version }}"
           echo "sharp_version=$sharp_version"
           echo "sharp_version=$sharp_version" >> $GITHUB_OUTPUT
