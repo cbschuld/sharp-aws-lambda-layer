@@ -39,9 +39,9 @@ jobs:
         with:
           context: .
           file: ./Dockerfile
-          tags: amazon-linux-sharp-layer:dev
+          tags: sharp-aws-lambda-layer:dev
       - name: Copy artifacts
-        run: docker run -v "${{ github.workspace }}/dist":/dist amazon-linux-sharp-layer:dev
+        run: docker run -v "${{ github.workspace }}/dist":/dist sharp-aws-lambda-layer:dev
       - name: Create release
         uses: svenstaro/upload-release-action@v2
         with:
