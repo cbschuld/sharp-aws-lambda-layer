@@ -25,6 +25,7 @@ jobs:
           content="${content//'%'/'%25'}"
           content="${content//$'\n'/'%0A'}"
           content="${content//$'\r'/'%0D'}"
+          echo "packageLockJson=$content"
           echo "packageLockJson=$content" >> $GITHUB_OUTPUT
       - name: Variables
         id: vars
