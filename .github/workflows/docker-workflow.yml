@@ -22,23 +22,16 @@ jobs:
         id: package_lock_json
         run: |
           content=$(cat ./package-lock.json)
-          content="${content//'%'/'%25'}"
-          content="${content//$'\n'/'%0A'}"
-          content="${content//$'\r'/'%0D'}"
-          echo "packageLockJson=$content"
-          echo "packageLockJson=$content" >> $GITHUB_OUTPUT
+          sharp_version=$(echo $content | jq -r '.dependencies."node_modules/sharp".version')
+          echo "sharp_version=$sharp_version" >> $GITHUB_OUTPUT
       - name: Variables
         id: vars
         run: |
-          echo "${{steps.package_lock_json.outputs.packageLockJson}}"
-          sharp_version="${{ fromJSON(steps.package_lock_json.outputs.packageLockJson).dependencies.sharp.version }}"
-          echo "sharp_version=$sharp_version"
-          echo "sharp_version=$sharp_version" >> $GITHUB_OUTPUT
-
           release_exists="true"
           git show-ref --tags --quiet --verify -- "refs/tags/$sharp_version" || release_exists="false"
           echo "release_exists=$release_exists"
           echo "release_exists=$release_exists" >> $GITHUB_OUTPUT
+          echo "sharp_version=$sharp_version" >> $GITHUB_OUTPUT
       - name: Build
         id: docker_build
         uses: docker/build-push-action@v4
