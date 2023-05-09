@@ -1,0 +1,53 @@
+name: Build Layer ZIP
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+  schedule:
+    - cron: '0 0 * * *'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+        with:
+          fetch-depth: 0
+      - name: Read version
+        id: package_lock_json
+        run: |
+          content=$(cat ./package-lock.json)
+          content="${content//'%'/'%25'}"
+          content="${content//$'\n'/'%0A'}"
+          content="${content//$'\r'/'%0D'}"
+          echo "::set-output name=packageLockJson::$content"
+      - name: Variables
+        id: vars
+        run: |
+          sharp_version="${{ fromJSON(steps.package_lock_json.outputs.packageLockJson).dependencies.sharp.version }}"
+          echo "::set-output name=sharp_version::$sharp_version"
+
+          release_exists="true"
+          git show-ref --tags --quiet --verify -- "refs/tags/$sharp_version" || release_exists="false"
+          echo "::set-output name=release_exists::$release_exists"
+      - name: Build
+        id: docker_build
+        uses: docker/build-push-action@v2
+        with:
+          context: .
+          file: ./Dockerfile
+          tags: amazon-linux-sharp-layer:dev
+      - name: Copy artifacts
+        run: docker run -v "${{ github.workspace }}/dist":/dist amazon-linux-sharp-layer:dev
+      - name: Create release
+        uses: svenstaro/upload-release-action@v2
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          tag: ${{ steps.vars.outputs.sharp_version }}
+          file: dist/sharp-layer.zip
+          overwrite: true
