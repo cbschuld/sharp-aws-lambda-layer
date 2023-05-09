@@ -18,16 +18,13 @@ jobs:
         uses: actions/checkout@v3
         with:
           fetch-depth: 0
-      - name: Read version
-        id: package_lock_json
+      - name: Variables
+        id: vars
         run: |
           content=$(cat ./package-lock.json)
           sharp_version=$(echo $content | jq -r '.packages."node_modules/sharp".version')
           echo "sharp_version=$sharp_version"
           echo "sharp_version=$sharp_version" >> $GITHUB_OUTPUT
-      - name: Variables
-        id: vars
-        run: |
           release_exists="true"
           git show-ref --tags --quiet --verify -- "refs/tags/$sharp_version" || release_exists="false"
           echo "release_exists=$release_exists"
