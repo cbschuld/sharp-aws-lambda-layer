@@ -22,7 +22,8 @@ jobs:
         id: package_lock_json
         run: |
           content=$(cat ./package-lock.json)
-          sharp_version=$(echo $content | jq -r '.dependencies."node_modules/sharp".version')
+          sharp_version=$(echo $content | jq -r '.packages."node_modules/sharp".version')
+          echo "sharp_version=$sharp_version"
           echo "sharp_version=$sharp_version" >> $GITHUB_OUTPUT
       - name: Variables
         id: vars
