@@ -1,0 +1,151 @@
+name: Build lambda layer for sharp
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+  schedule:
+    - cron: '0 16 * * *'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    strategy:
+      matrix:
+        arch: [arm64, x64, all]
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install esbuild
+        run: npm i -g esbuild@latest
+
+      - name: Install sharp (${{ matrix.arch }})
+        run: |
+          if [ "${{ matrix.arch }}" = "all" ]; then
+            npm i --os=linux --cpu=x64 --libc=glibc sharp
+            npm i --os=linux --cpu=arm64 --libc=glibc sharp
+          else
+            npm i --save-exact --os=linux --cpu=${{ matrix.arch }} --libc=glibc sharp
+          fi
+
+      - name: Extract Sharp version
+        id: version
+        uses: notiz-dev/github-action-json-property@release
+        with:
+          path: 'package.json'
+          prop_path: 'dependencies.sharp'
+
+      - name: esbuild bundle
+        run: |
+          esbuild --bundle ./node_modules/sharp/ \
+            --outfile=index.js \
+            --minify --format=cjs --platform=node
+
+      - name: Package Lambda layer (${{ matrix.arch }})
+        run: |
+          mkdir -p nodejs/node_modules/sharp/lib
+          mv index.js nodejs/node_modules/sharp/lib/
+          mv node_modules/sharp/package.json nodejs/node_modules/sharp/
+          mv node_modules/sharp/LICENSE nodejs/node_modules/sharp/
+          mv node_modules/sharp/lib/index.d.ts nodejs/node_modules/sharp/lib/
+          mv node_modules/@img nodejs/node_modules/ || true
+          zip -r release-${{ matrix.arch }} nodejs
+
+      - name: Clean up
+        run: rm -rf nodejs node_modules
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sharp-${{ matrix.arch }}
+          path: release-${{ matrix.arch }}.zip
+
+  test:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v3
+
+      - name: Download x64 artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: sharp-x64
+
+      - name: Run test for x64
+        run: |
+          unzip release-x64.zip
+          cp test.mjs nodejs/test.mjs
+          node nodejs/test.mjs
+          if [ ! -f test.png ]; then exit 1 ; fi
+
+  publish:
+    needs: [build, test]
+    if: ${{ github.event_name != 'pull_request' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Unzip sharp-x64
+        run: |
+          unzip artifacts/sharp-x64/release-x64.zip -d artifacts/sharp-x64
+
+      - name: Read previous version
+        id: previous
+        run: echo "sharpver=$(cat version.txt)" >> $GITHUB_ENV
+
+      - name: Get new version
+        id: version
+        uses: notiz-dev/github-action-json-property@release
+        with:
+          path: 'artifacts/sharp-x64/nodejs/node_modules/sharp/package.json'
+          prop_path: 'version'
+
+      - name: Skip if no version change
+        if: ${{ env.sharpver == steps.version.outputs.prop }}
+        run: echo "🧠 No Sharp update detected. Skipping release."
+    
+        # (only continue if version actually changed)
+      - name: Update version.txt
+        if: ${{ env.sharpver != steps.version.outputs.prop }}
+        run: echo "${{ steps.version.outputs.prop }}" > version.txt
+
+      - name: Commit version.txt
+        uses: stefanzweifel/git-auto-commit-action@v4
+        if: ${{ env.sharpver != steps.version.outputs.prop }}
+        with:
+          commit_message: "Update sharp to ${{ steps.version.outputs.prop }}"
+          file_pattern: version.txt
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        if: ${{ env.sharpver != steps.version.outputs.prop }}
+        with:
+          files: artifacts/**/*.zip
+          body: Sharp version ${{ steps.version.outputs.prop }}
+          tag_name: ${{ steps.version.outputs.prop }}
+
+      - name: Notify Discord
+        if: ${{ env.sharpver != steps.version.outputs.prop }}
+        run: |
+          curl -X POST -H "Content-Type: application/json" \
+            -d "{\"content\":\"🧠 Sharp Lambda Layer updated!\nVersion: \`${{ steps.version.outputs.prop }}\`\n<https://github.com/${{ github.repository }}/releases/tag/${{ steps.version.outputs.prop }}>\"}" \
+            "${{ secrets.DISCORD_WEBHOOK_URL }}"
