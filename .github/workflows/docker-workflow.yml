@@ -7,42 +7,135 @@ on:
   pull_request:
     branches:
       - main
-  #schedule:
-  #- cron: '0 0 * * *'
+  workflow_dispatch: # Allows manual triggering
 
 jobs:
-  build:
+  # Setup job to determine Sharp version and check release existence once
+  setup:
     runs-on: ubuntu-latest
+    outputs:
+      sharp_version: ${{ steps.vars.outputs.sharp_version }}
+      release_exists: ${{ steps.vars.outputs.release_exists }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
-          fetch-depth: 0
-      - name: Variables
+          fetch-depth: 0 # Needed for tag checking
+
+      - name: Install jq
+        run: sudo apt-get update && sudo apt-get install -y jq
+
+      - name: Get Sharp Version and Check Release
         id: vars
         run: |
           content=$(cat ./package-lock.json)
           sharp_version=$(echo $content | jq -r '.packages."node_modules/sharp".version')
-          echo "sharp_version=$sharp_version"
+          if [ -z "$sharp_version" ] || [ "$sharp_version" == "null" ]; then
+            echo "Error: Could not extract sharp version from package-lock.json"
+            exit 1
+          fi
+          echo "Determined Sharp version: $sharp_version"
           echo "sharp_version=$sharp_version" >> $GITHUB_OUTPUT
-          release_exists="true"
-          git show-ref --tags --quiet --verify -- "refs/tags/$sharp_version" || release_exists="false"
-          echo "release_exists=$release_exists"
+
+          release_exists="false"
+          # Check if tag exists locally first (faster)
+          if git rev-parse "v${sharp_version}" >/dev/null 2>&1; then
+             release_exists="true"
+          else
+             # If not local, check remote tags
+             git ls-remote --tags origin | grep -q "refs/tags/v${sharp_version}$" && release_exists="true" || release_exists="false"
+          fi
+
+          echo "Release tag v${sharp_version} exists: $release_exists"
           echo "release_exists=$release_exists" >> $GITHUB_OUTPUT
-          echo "sharp_version=$sharp_version" >> $GITHUB_OUTPUT
-      - name: Build
-        id: docker_build
-        uses: docker/build-push-action@v4
+
+
+  # Build job using matrix for architectures
+  build:
+    needs: setup
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        # Define the platforms and corresponding simple architecture names
+        include:
+          - platform: linux/amd64
+            arch: x64
+          - platform: linux/arm64
+            arch: arm64
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image for ${{ matrix.arch }}
+        uses: docker/build-push-action@v6
         with:
           context: .
           file: ./Dockerfile
-          tags: sharp-aws-lambda-layer:dev
-      - name: Copy artifacts
-        run: docker run -v "${{ github.workspace }}/dist":/dist sharp-aws-lambda-layer:dev
-      - name: Create release
+          # Specify the platform for the build
+          platforms: ${{ matrix.platform }}
+          # Pass the architecture name as a build argument
+          build-args: |
+            TARGET_ARCH=${{ matrix.arch }}
+          # Load the image into the local Docker daemon to extract files
+          # Alternatively, use 'outputs: type=local,dest=output-docker'
+          # then copy from 'output-docker/dist/...' in the next step.
+          # Loading is simpler here if we just need the zip.
+          load: true
+          tags: sharp-aws-lambda-layer:${{ matrix.arch }}-dev # Tag with arch
+
+      - name: Create dist directory
+        run: mkdir -p dist # Create directory if it doesn't exist
+
+      - name: Copy artifact (${{ matrix.arch }})
+        # Run a temporary container from the built image to copy the specific zip file
+        run: |
+          docker run --rm -v "${{ github.workspace }}/dist":/output \
+          sharp-aws-lambda-layer:${{ matrix.arch }}-dev \
+          cp /build/dist/sharp-layer-${{ matrix.arch }}.zip /output/
+
+      - name: Upload artifact (${{ matrix.arch }})
+        uses: actions/upload-artifact@v4
+        with:
+          name: sharp-layer-${{ matrix.arch }} # Artifact name includes arch
+          path: dist/sharp-layer-${{ matrix.arch }}.zip # Path to the specific zip file
+
+  # Release job runs after all builds complete
+  release:
+    needs: [setup, build] # Depends on setup for version and build for artifacts
+    runs-on: ubuntu-latest
+    # Only run on push to main, and if the release doesn't exist yet
+    # You might want to adjust this condition (e.g., always create/overwrite?)
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' # && needs.setup.outputs.release_exists == 'false'
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          # No name specified, downloads all artifacts from the workflow run
+          path: dist # Download to 'dist' directory
+          # Optional: Pattern matching if you have other artifacts
+          # pattern: sharp-layer-*
+          # merge-multiple: true # Merges artifacts if they have the same name (not needed here)
+
+      - name: List downloaded files
+        run: ls -R dist
+
+      - name: Create or Update GitHub Release
         uses: svenstaro/upload-release-action@v2
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
-          tag: ${{ steps.vars.outputs.sharp_version }}
-          file: dist/sharp-layer.zip
-          overwrite: true
+          # Use the sharp version determined in the setup job
+          tag: v${{ needs.setup.outputs.sharp_version }}
+          release_name: Sharp v${{ needs.setup.outputs.sharp_version }} Layer
+          # Upload all zip files found in the 'dist' directory's subdirectories
+          # Adjust the pattern if download-artifact structure is different
+          file: dist/sharp-layer-*/*.zip
+          file_glob: true # Enable globbing for the 'file' input
+          overwrite: true # Overwrite existing assets in the release if tag exists
+          body: "AWS Lambda Layer for Sharp v${{ needs.setup.outputs.sharp_version }}. Includes builds for x64 (amd64) and arm64."
+          # make_latest: true # Optionally mark as latest release
