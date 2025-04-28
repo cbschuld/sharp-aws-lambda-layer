@@ -20,15 +20,23 @@ COPY package.json package-lock.json webpack.config.js ./
 # Install dependencies
 RUN npm --no-optional --no-audit --progress=false --arch=${TARGET_ARCH} --platform=${TARGET_PLATFORM} install
 
-# --- START TEMPORARY DEBUG STEP ---
-# List the contents of the sharp directory AFTER install to see the structure
-RUN echo ">>> Listing contents of /build/node_modules/sharp/ after install <<<" && \
-    ls -lR /build/node_modules/sharp/ || echo "Sharp directory not found?"
-# --- END TEMPORARY DEBUG STEP ---
-
 # Run webpack, passing the TARGET_ARCH environment variable
 # Webpack config will use this to create arch-specific output
 RUN TARGET_ARCH=${TARGET_ARCH} node ./node_modules/webpack/bin/webpack.js
+
+# --- Smoke Test ---
+  RUN echo ">>> Running smoke test on packaged layer..." && \
+  node -e " \
+    try { \
+      const sharp = require('/build/dist/${layerBasePath}'); \
+      console.log('>>> SUCCESS: require(\'sharp\') loaded.'); \
+      console.log('Sharp versions:', sharp.versions); \
+    } catch (err) { \
+      console.error('>>> FAILURE: require(\'sharp\') failed:', err); \
+      exit 1; \
+    } \
+  "
+# --- End Smoke Test ---
 
 # Simple test to ensure sharp loads correctly for the target architecture
 # Note: This might fail now if webpack failed, run it only after successful webpack
