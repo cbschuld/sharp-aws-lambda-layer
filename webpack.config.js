@@ -1,6 +1,6 @@
 const path = require('path');
 const CopyPlugin = require('copy-webpack-plugin');
-const ZipPlugin = 'zip-webpack-plugin';
+const ZipPlugin = require('zip-webpack-plugin');
 
 // Read the target architecture from the environment variable set in Dockerfile
 const targetArch = process.env.TARGET_ARCH; // Should be 'x64' or 'arm64'
