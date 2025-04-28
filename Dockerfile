@@ -17,10 +17,14 @@ COPY package.json package-lock.json webpack.config.js ./
 # Copy other potential source files if needed by webpack or sharp install
 # COPY src ./src
 
-# Install dependencies - npm install inside the target arch container
-# Sharp's install script will use process.arch (e.g., 'x64', 'arm64')
-# derived from the container's architecture to fetch correct binaries.
+# Install dependencies
 RUN npm --no-optional --no-audit --progress=false --arch=${TARGET_ARCH} --platform=${TARGET_PLATFORM} install
+
+# --- START TEMPORARY DEBUG STEP ---
+# List the contents of the sharp directory AFTER install to see the structure
+RUN echo ">>> Listing contents of /build/node_modules/sharp/ after install <<<" && \
+    ls -lR /build/node_modules/sharp/ || echo "Sharp directory not found?"
+# --- END TEMPORARY DEBUG STEP ---
 
 # Run webpack, passing the TARGET_ARCH environment variable
 # Webpack config will use this to create arch-specific output
