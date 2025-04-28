@@ -26,25 +26,25 @@ RUN TARGET_ARCH=${TARGET_ARCH} node ./node_modules/webpack/bin/webpack.js
 
 # --- Smoke Test ---
 RUN echo ">>> Running smoke test on packaged layer..." && \
-node -e " \
-  try { \
-    /* --- HARDCODE Correct path relative to /build/dist --- */ \
-    const sharp = require('/build/dist/nodejs/node_modules/sharp'); \
-    console.log('>>> SUCCESS: require(\'sharp\') loaded.'); \
-    /* Check for versions property existence before accessing */ \
-    if (sharp && sharp.versions) { \
+  # Try to execute the node command in a subshell group ()
+  ( \
+    node -e " \
+      const sharp = require('/build/dist/nodejs/node_modules/sharp'); \
+      console.log('>>> SUCCESS: require(\'sharp\') loaded.'); \
+      if (sharp && sharp.versions) { \
         console.log('Sharp versions:', sharp.versions); \
-    } else { \
+      } else { \
         console.log('Sharp loaded, but versions property not found.'); \
-    } \
-  } catch (err) { \
-    console.error('>>> FAILURE: require(\'sharp\') failed:', err); \
-    /* Add more debug info on failure */ \
-    console.error('Listing /build/dist/nodejs/node_modules/sharp contents on failure:'); \
-    ls -lR /build/dist/nodejs/node_modules/sharp || echo 'Failed to list contents.'; \
-    exit 1; \
-  } \
-"
+      } \
+    " \
+  ) || \
+  # If the node command fails (exits non-zero), execute this block
+  ( \
+    echo ">>> FAILURE: Node smoke test failed!" && \
+    echo ">>> Listing /build/dist/nodejs/node_modules/sharp contents on failure:" && \
+    ls -lR /build/dist/nodejs/node_modules/sharp && \
+    exit 1 \
+  )
 # --- End Smoke Test ---
 
 # Simple test to ensure sharp loads correctly for the target architecture
