@@ -23,19 +23,20 @@ COPY package.json package-lock.json webpack.config.js ./
 RUN npm --no-optional --no-audit --progress=false --arch=${TARGET_ARCH} --platform=${TARGET_PLATFORM} install
 
 # --- START TEMPORARY DEBUG STEP ---
-# Check if the specific .node file exists after install
-RUN echo ">>> Checking for .node file presence for ${TARGET_PLATFORM}-${TARGET_ARCH}..." && \
+# Combine the whole check into a single shell command executed by RUN
+RUN set -e && \
+    echo ">>> Checking for .node file presence for ${TARGET_PLATFORM}-${TARGET_ARCH}..." && \
     NODE_FILE_PATH="/build/node_modules/sharp/build/Release/sharp-${TARGET_PLATFORM}-${TARGET_ARCH}.node" && \
     if [ -f "$NODE_FILE_PATH" ]; then \
-      echo ">>> SUCCESS: Found file:"; \
+      echo ">>> SUCCESS: Found file:" && \
       ls -l "$NODE_FILE_PATH"; \
     else \
-      echo ">>> FAILURE: File NOT found at $NODE_FILE_PATH!"; \
-      echo ">>> Listing /build/node_modules/sharp/build/Release contents:"; \
-      ls -l /build/node_modules/sharp/build/Release/; \
-      echo ">>> Listing /build/node_modules/sharp/vendor contents (if exists):"; \
-      ls -lR /build/node_modules/sharp/vendor/; \
-      exit 1; \ # Optionally fail fast if file not found
+      echo ">>> FAILURE: File NOT found at $NODE_FILE_PATH!" && \
+      echo ">>> Listing /build/node_modules/sharp/build/Release contents:" && \
+      ls -l /build/node_modules/sharp/build/Release/ && \
+      echo ">>> Listing /build/node_modules/sharp/vendor contents (if exists):" && \
+      ls -lR /build/node_modules/sharp/vendor/ || echo "(Vendor dir listing failed or not found)" && \
+      exit 1; \
     fi
 # --- END TEMPORARY DEBUG STEP ---
 
