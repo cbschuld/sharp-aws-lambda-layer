@@ -1,6 +1,6 @@
 const path = require('path');
 const CopyPlugin = require('copy-webpack-plugin');
-const ZipPlugin = require('zip-webpack-plugin');
+const ZipPlugin = 'zip-webpack-plugin';
 
 // Read the target architecture from the environment variable set in Dockerfile
 const targetArch = process.env.TARGET_ARCH; // Should be 'x64' or 'arm64'
@@ -17,26 +17,32 @@ const nodeFileSuffix = `sharp-${targetPlatform}-${targetArch}.node`; // e.g., sh
 // Define the output path structure for Lambda layers
 const layerBasePath = 'nodejs/node_modules/sharp';
 
+// Define the relative path that sharp's JS code uses to require the native module.
+// This is typically '../build/Release/...' relative to files in 'lib/'
+const sharpInternalRequirePath = `../build/Release/${nodeFileSuffix}`;
+
 console.log(`Webpack config: Building for ${targetPlatform}-${targetArch}`);
 console.log(`Webpack config: Expecting native module: ${nodeFileSuffix}`);
+console.log(`Webpack config: Marking require path as external: ${sharpInternalRequirePath}`);
 
 module.exports = {
   name: `layer-${targetArch}`, // Give the config a name incorporating the arch
   mode: 'production',
   stats: 'minimal',
-  target: 'node',
+  target: 'node', // Important: ensures Webpack uses Node.js style externals/requires
   watch: false,
   entry: {
     // Entry point for Sharp's main lib
-    [`${layerBasePath}/index`]: './node_modules/sharp/lib/index.js', // Ensure .js is specified if needed
+    [`${layerBasePath}/index`]: './node_modules/sharp/lib/index.js',
   },
   plugins: [
     new CopyPlugin({
       patterns: [
         {
           // Copy the compiled native module build ('Release' directory)
+          // to the location expected by the runtime require
           from: `node_modules/sharp/build/Release/${nodeFileSuffix}`,
-          to: `${layerBasePath}/build/Release/${nodeFileSuffix}`, // Keep the same structure
+          to: `${layerBasePath}/build/Release/${nodeFileSuffix}`, // Keep the same structure relative to 'lib'
         },
         {
           from: 'node_modules/sharp/LICENSE',
@@ -60,7 +66,7 @@ module.exports = {
       filename: `sharp-layer-${targetArch}.zip`,
       // Specify the base directory for files inside the zip
       // This ensures the 'nodejs/...' structure is at the root of the zip
-      pathPrefix: '', // Default might be fine, but explicitly empty can help
+      pathPrefix: '',
     })
   ],
   optimization: {
@@ -72,22 +78,25 @@ module.exports = {
     libraryTarget: 'commonjs2',
   },
   externals: {
-    // *** CRITICAL: Define the native module as external relative to its expected location ***
-    // When sharp requires './build/Release/sharp-linux-x64.node' at runtime,
-    // webpack will resolve it to `require('./sharp-linux-x64.node')` within the bundle context.
-    // We are providing this file via the CopyPlugin into the correct relative path.
-    // --- This section might not be strictly needed if CopyPlugin handles the .node file correctly ---
-    // Let's comment it out initially, as CopyPlugin places the file correctly relative to index.js
-    // './build/Release/sharp-linux-x64.node': 'commonjs ./build/Release/sharp-linux-x64.node',
-    // './build/Release/sharp-linux-arm64.node': 'commonjs ./build/Release/sharp-linux-arm64.node'
-
-    // Update: Simpler approach - let CopyPlugin place the .node file.
-    // Sharp's internal require path is usually relative like `require('../build/Release/sharp-....node')`
-    // from within `lib/index.js`. Ensure the CopyPlugin maintains this structure.
-    // The current CopyPlugin path seems correct for this.
+    // *** Tell Webpack NOT to bundle the .node file ***
+    // Map the internal require path used by Sharp to a commonjs external type.
+    // This leaves the require statement intact for the Node.js runtime.
+    [sharpInternalRequirePath]: `commonjs ${sharpInternalRequirePath}`
   },
   // Ensure node module resolution works
   resolve: {
     modules: [path.resolve(__dirname, 'node_modules'), 'node_modules'],
   },
+  // Add node-loader as an alternative way to handle .node files if externals doesn't work alone
+  // module: {
+  //   rules: [
+  //     {
+  //       test: /\.node$/,
+  //       loader: 'node-loader',
+  //       options: {
+  //         name: '[path][name].[ext]', // Keep original path/name
+  //       },
+  //     },
+  //   ],
+  // },
 };
