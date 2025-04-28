@@ -1,4 +1,4 @@
-FROM public.ecr.aws/sam/build-nodejs18.x:latest
+FROM public.ecr.aws/sam/build-nodejs22.x:latest
 
 WORKDIR /build
 
