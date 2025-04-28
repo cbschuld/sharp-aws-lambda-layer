@@ -28,11 +28,20 @@ RUN TARGET_ARCH=${TARGET_ARCH} node ./node_modules/webpack/bin/webpack.js
   RUN echo ">>> Running smoke test on packaged layer..." && \
   node -e " \
     try { \
-      const sharp = require('/build/dist/${layerBasePath}'); \
+      /* --- HARDCODE Correct path relative to /build/dist --- */ \
+      const sharp = require('/build/dist/nodejs/node_modules/sharp'); \
       console.log('>>> SUCCESS: require(\'sharp\') loaded.'); \
-      console.log('Sharp versions:', sharp.versions); \
+      /* Check for versions property existence before accessing */ \
+      if (sharp && sharp.versions) { \
+         console.log('Sharp versions:', sharp.versions); \
+      } else { \
+         console.log('Sharp loaded, but versions property not found.'); \
+      } \
     } catch (err) { \
       console.error('>>> FAILURE: require(\'sharp\') failed:', err); \
+      /* Add more debug info on failure */ \
+      console.error('Listing /build/dist/nodejs/node_modules/sharp contents on failure:'); \
+      ls -lR /build/dist/nodejs/node_modules/sharp || echo 'Failed to list contents.'; \
       exit 1; \
     } \
   "
