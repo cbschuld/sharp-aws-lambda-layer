@@ -116,12 +116,11 @@ jobs:
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
-          # No name specified, downloads all artifacts from the workflow run
+          # Specify a pattern to download only the relevant ZIPs
+          pattern: sharp-layer-*
           path: dist # Download to 'dist' directory
-          # Optional: Pattern matching if you have other artifacts
-          # pattern: sharp-layer-*
-          # merge-multiple: true # Merges artifacts if they have the same name (not needed here)
-
+          # merge-multiple: true # Still not strictly needed as names are unique, but doesn't hurt
+  
       - name: List downloaded files
         run: ls -R dist
 
