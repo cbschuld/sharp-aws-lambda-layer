@@ -87,16 +87,15 @@ module.exports = {
   resolve: {
     modules: [path.resolve(__dirname, 'node_modules'), 'node_modules'],
   },
-  // Add node-loader as an alternative way to handle .node files if externals doesn't work alone
-  // module: {
-  //   rules: [
-  //     {
-  //       test: /\.node$/,
-  //       loader: 'node-loader',
-  //       options: {
-  //         name: '[path][name].[ext]', // Keep original path/name
-  //       },
-  //     },
-  //   ],
-  // },
+  module: {
+    rules: [
+      {
+        test: /\.node$/,
+        loader: 'node-loader',
+        options: {
+          name: '[path][name].[ext]', // Keep original path/name
+        },
+      },
+    ],
+  },
 };

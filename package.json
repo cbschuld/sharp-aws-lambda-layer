@@ -6,6 +6,7 @@
   "module": "sharp-aws-lambda-layer",
   "devDependencies": {
     "copy-webpack-plugin": "^13.0.0",
+    "node-loader": "^2.1.0",
     "webpack": "^5.99.7",
     "webpack-cli": "^6.0.1",
     "webpack-node-externals": "^3.0.0",
