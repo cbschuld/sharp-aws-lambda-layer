@@ -20,8 +20,13 @@ COPY package.json package-lock.json webpack.config.js ./
 # Install dependencies
 RUN npm --no-optional --no-audit --progress=false --arch=${TARGET_ARCH} --platform=${TARGET_PLATFORM} install
 
-# Run webpack, passing the TARGET_ARCH environment variable
-# Webpack config will use this to create arch-specific output
+# --- TEMPORARY DEBUG STEP ---
+# List the FULL contents of the sharp directory AFTER install
+RUN echo ">>> Listing FULL contents of /build/node_modules/sharp/ after install <<<" && \
+    ls -lR /build/node_modules/sharp/ || echo "Sharp directory listing failed?"
+# --- END TEMPORARY DEBUG STEP ---
+
+# Run webpack (this will likely still error, but we need the listing first)
 RUN TARGET_ARCH=${TARGET_ARCH} node ./node_modules/webpack/bin/webpack.js
 
 # --- Smoke Test ---
