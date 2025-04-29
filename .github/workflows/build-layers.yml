@@ -203,13 +203,13 @@ jobs:
 
       # --- Update version.txt logic (no changes needed here) ---
       - name: Update version.txt for new stable release
-        if: steps.skip_check.outputs.SKIP_RELEASE == 'false' && env.IS_PRERELEASE == 'false'
+        if: env.SKIP_RELEASE == 'false' && env.IS_PRERELEASE == 'false'
         run: |
           echo "Updating version.txt to ${{ steps.version.outputs.prop }}"
           echo "${{ steps.version.outputs.prop }}" > version.txt
 
       - name: Commit version.txt update
-        if: steps.skip_check.outputs.SKIP_RELEASE == 'false' && env.IS_PRERELEASE == 'false'
+        if: env.SKIP_RELEASE == 'false' && env.IS_PRERELEASE == 'false'
         uses: stefanzweifel/git-auto-commit-action@v4
         with:
           commit_message: "Update sharp to ${{ steps.version.outputs.prop }}"
@@ -217,7 +217,7 @@ jobs:
 
       # --- Create GitHub Release logic (no changes needed here, uses IS_PRERELEASE env var) ---
       - name: Create GitHub Release
-        if: steps.skip_check.outputs.SKIP_RELEASE == 'false'
+        if: env.SKIP_RELEASE == 'false'
         uses: softprops/action-gh-release@v1
         with:
           files: artifacts/**/*.zip
@@ -238,7 +238,7 @@ jobs:
 
       # --- Notify Discord logic (no changes needed here) ---
       - name: Notify Discord
-        if: steps.skip_check.outputs.SKIP_RELEASE == 'false'
+        if: env.SKIP_RELEASE == 'false'
         run: |
           if [[ "${{ env.IS_PRERELEASE }}" == "true" ]]; then
             RELEASE_TYPE="Pre-release"
