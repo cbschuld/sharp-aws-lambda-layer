@@ -110,66 +110,128 @@ jobs:
     needs: [build, test]
     if: ${{ github.event_name != 'pull_request' }}
     runs-on: ubuntu-latest
+    # Add permissions if needed for writing to version.txt and creating releases
+    permissions:
+      contents: write # Needed for committing version.txt and creating releases
+
     steps:
       - name: Checkout
         uses: actions/checkout@v3
+        with:
+          # Fetch depth 0 to get all history for version comparison if needed,
+          # though reading version.txt is simpler here.
+          fetch-depth: 0
 
       - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
-          path: artifacts
+          path: artifacts # Download all artifacts to ./artifacts/<artifact-name>
 
-      - name: Unzip sharp-x64
+      - name: Unzip sharp-x64 to access package.json
         run: |
           unzip artifacts/sharp-x64/release-x64.zip -d artifacts/sharp-x64
 
-      - name: Read previous version
+      - name: Read previous version from version.txt
         id: previous
-        run: echo "sharpver=$(cat version.txt)" >> $GITHUB_ENV
+        run: |
+          # Handle case where version.txt might not exist yet
+          if [[ -f version.txt ]]; then
+            echo "sharpver=$(cat version.txt)" >> $GITHUB_ENV
+          else
+            echo "sharpver=0.0.0" >> $GITHUB_ENV # Default if file doesn't exist
+          fi
+        # Continue even if version.txt doesn't exist on first run
+        continue-on-error: true
 
-      - name: Get new version
+      - name: Get new sharp version from downloaded artifact
         id: version
         uses: notiz-dev/github-action-json-property@release
         with:
+          # Path to the package.json within the unzipped artifact
           path: 'artifacts/sharp-x64/nodejs/node_modules/sharp/package.json'
           prop_path: 'version'
 
-      - name: Check if version is pre-release
-        id: prerelease
+      - name: Check if new version is a pre-release
+        id: prerelease # Give the step an ID if you wanted to use outputs instead of env
         run: |
-          if [[ "${{ steps.version.outputs.prop }}" == *-* ]]; then
-            echo "is_prerelease=true" >> $GITHUB_ENV
+          SHARP_VERSION="${{ steps.version.outputs.prop }}"
+          if [[ "$SHARP_VERSION" == *-* ]]; then
+            echo "Detected pre-release version: $SHARP_VERSION"
+            echo "IS_PRERELEASE=true" >> $GITHUB_ENV
           else
-            echo "is_prerelease=false" >> $GITHUB_ENV
+            echo "Detected stable version: $SHARP_VERSION"
+            echo "IS_PRERELEASE=false" >> $GITHUB_ENV
           fi
-      
-      - name: Skip if no stable version change
-        if: env.is_prerelease == 'false' && env.sharpver == steps.version.outputs.prop
-        run: echo "🧠 No Sharp stable update detected. Skipping release."
-      
-      - name: Update version.txt
-        if: env.is_prerelease == 'false' && env.sharpver != steps.version.outputs.prop
-        run: echo "${{ steps.version.outputs.prop }}" > version.txt
-      
-      - name: Commit version.txt
+
+      # --- Optional: Skip logic based on version comparison ---
+      # This logic prevents re-releasing the *same* version.
+      # It also only updates version.txt for *stable* releases.
+      - name: Check if release should be skipped
+        id: skip_check
+        run: |
+          echo "Previous version: ${{ env.sharpver }}"
+          echo "New version: ${{ steps.version.outputs.prop }}"
+          echo "Is pre-release: ${{ env.IS_PRERELEASE }}"
+          if [[ "${{ env.sharpver }}" == "${{ steps.version.outputs.prop }}" ]]; then
+            echo "Version hasn't changed (${{ steps.version.outputs.prop }}). Skipping release."
+            echo "SKIP_RELEASE=true" >> $GITHUB_ENV
+          else
+            echo "Version changed or first run. Proceeding with release checks."
+            echo "SKIP_RELEASE=false" >> $GITHUB_ENV
+          fi
+
+      # --- Update version.txt only for new STABLE releases ---
+      - name: Update version.txt for new stable release
+        # Run only if it's NOT a pre-release AND the version has changed
+        if: steps.skip_check.outputs.SKIP_RELEASE == 'false' && env.IS_PRERELEASE == 'false'
+        run: |
+          echo "Updating version.txt to ${{ steps.version.outputs.prop }}"
+          echo "${{ steps.version.outputs.prop }}" > version.txt
+
+      - name: Commit version.txt update
+        # Run only if version.txt was updated (new stable release)
+        if: steps.skip_check.outputs.SKIP_RELEASE == 'false' && env.IS_PRERELEASE == 'false'
         uses: stefanzweifel/git-auto-commit-action@v4
-        if: env.is_prerelease == 'false' && env.sharpver != steps.version.outputs.prop
         with:
           commit_message: "Update sharp to ${{ steps.version.outputs.prop }}"
           file_pattern: version.txt
+          # Add push options if your branch protection requires it
+          # push_options: '--force'
 
+      # --- Create GitHub Release ---
       - name: Create GitHub Release
+        # Run only if the version has actually changed (don't re-release the same version)
+        if: steps.skip_check.outputs.SKIP_RELEASE == 'false'
         uses: softprops/action-gh-release@v1
-        if: ${{ env.sharpver != steps.version.outputs.prop }}
         with:
-          files: artifacts/**/*.zip
-          body: Sharp version ${{ steps.version.outputs.prop }}
-          tag_name: ${{ steps.version.outputs.prop }}
-          prerelease: ${{ env.is_prerelease }}
+          files: artifacts/**/*.zip # Upload all zip files from the artifacts subdirectories
+          body: | # Use a multi-line body for better formatting
+            Sharp version ${{ steps.version.outputs.prop }} Lambda Layer.
 
+            Architectures included:
+            - arm64
+            - x64
+            - all (combined node_modules for arm64 & x64)
+          tag_name: v${{ steps.version.outputs.prop }} # Add 'v' prefix to tag, common practice
+          name: Sharp Layer v${{ steps.version.outputs.prop }} # Release title
+          # Use the environment variable set in the 'Check if new version is a pre-release' step
+          prerelease: ${{ env.IS_PRERELEASE }}
+        env:
+            GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # Explicitly pass the token
+
+      # --- Notify Discord ---
       - name: Notify Discord
-        if: ${{ env.sharpver != steps.version.outputs.prop }}
+        # Notify only if a new release was created
+        if: steps.skip_check.outputs.SKIP_RELEASE == 'false'
         run: |
+          # Construct message based on whether it's a pre-release or stable release
+          if [[ "${{ env.IS_PRERELEASE }}" == "true" ]]; then
+            RELEASE_TYPE="Pre-release"
+          else
+            RELEASE_TYPE="Stable release"
+          fi
+          MESSAGE_CONTENT="🧠 Sharp Lambda Layer updated!\\n${RELEASE_TYPE}: \`${{ steps.version.outputs.prop }}\`\\n<https://github.com/${{ github.repository }}/releases/tag/v${{ steps.version.outputs.prop }}>"
+
           curl -X POST -H "Content-Type: application/json" \
-            -d "{\"content\":\"🧠 Sharp Lambda Layer updated!\nVersion: \`${{ steps.version.outputs.prop }}\`\n<https://github.com/${{ github.repository }}/releases/tag/${{ steps.version.outputs.prop }}>\"}" \
+            -d "{\"content\":\"${MESSAGE_CONTENT}\"}" \
             "${{ secrets.DISCORD_WEBHOOK_URL }}"
