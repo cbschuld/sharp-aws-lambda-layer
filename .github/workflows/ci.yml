@@ -1,4 +1,4 @@
-name: Build lambda layer for sharp
+name: ci
 
 on:
   push:
