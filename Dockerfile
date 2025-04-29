@@ -1,5 +1,10 @@
-# Use Amazon Linux 2 base image to match AWS Lambda runtime
-FROM public.ecr.aws/lambda/nodejs:20
+# Use Amazon Linux 2 base image explicitly
+FROM amazonlinux:2
+
+# Install Node.js 20 (to match AWS Lambda runtime)
+RUN curl -fsSL https://rpm.nodesource.com/setup_20.x | bash - && \
+    yum install -y nodejs && \
+    npm install -g npm@latest
 
 WORKDIR /build
 
@@ -9,9 +14,9 @@ ARG TARGET_PLATFORM=linux
 
 # Install build dependencies for sharp and libvips
 RUN yum update -y && \
-    yum install -y gcc-c++ make python3 pkgconfig tar gzip && \
+    yum install -y gcc-c++ make python3 pkgconf tar gzip && \
     # Install libvips and its dependencies
-    yum install -y libvips42 libvips-devel && \
+    yum install -y libvips libvips-devel && \
     # Clean up to reduce layer size
     yum clean all && rm -rf /var/cache/yum
 
