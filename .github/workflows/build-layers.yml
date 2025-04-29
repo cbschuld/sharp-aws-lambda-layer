@@ -142,19 +142,18 @@ jobs:
           else
             echo "is_prerelease=false" >> $GITHUB_ENV
           fi
-
-      - name: Skip if no version change
-        if: ${{ env.sharpver == steps.version.outputs.prop }}
-        run: echo "🧠 No Sharp update detected. Skipping release."
-    
-        # (only continue if version actually changed)
+      
+      - name: Skip if no stable version change
+        if: env.is_prerelease == 'false' && env.sharpver == steps.version.outputs.prop
+        run: echo "🧠 No Sharp stable update detected. Skipping release."
+      
       - name: Update version.txt
-        if: ${{ env.sharpver != steps.version.outputs.prop }}
+        if: env.is_prerelease == 'false' && env.sharpver != steps.version.outputs.prop
         run: echo "${{ steps.version.outputs.prop }}" > version.txt
-
+      
       - name: Commit version.txt
         uses: stefanzweifel/git-auto-commit-action@v4
-        if: ${{ env.sharpver != steps.version.outputs.prop }}
+        if: env.is_prerelease == 'false' && env.sharpver != steps.version.outputs.prop
         with:
           commit_message: "Update sharp to ${{ steps.version.outputs.prop }}"
           file_pattern: version.txt
