@@ -1,4 +1,4 @@
-# AWS Sharp Lambda Layer (x86\_64 and arm64)
+# Sharp as an AWS Lambda Layer (x86\_64 and arm64)
 
 [![Build Layers](https://github.com/cbschuld/sharp-aws-lambda-layer/workflows/Build%20Layers/badge.svg)](https://github.com/cbschuld/sharp-aws-lambda-layer/actions?query=workflow:"Build+Layers")
 [![GitHub release](https://img.shields.io/github/release/cbschuld/sharp-aws-lambda-layer?include_prereleases=&sort=semver&color=blue)](https://github.com/cbschuld/sharp-aws-lambda-layer/releases/)
