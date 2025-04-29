@@ -1,8 +1,9 @@
 # AWS Sharp Lambda Layer (x86\_64 and arm64)
 
-[![GitHub tag](https://img.shields.io/github/tag/cbschuld/sharp-aws-lambda-layer?include_prereleases=&sort=semver&color=blue)](https://github.com/cbschuld/sharp-aws-lambda-layer/releases/)
+[![Build Layers](https://github.com/cbschuld/sharp-aws-lambda-layer/workflows/Build%20Layers/badge.svg)](https://github.com/cbschuld/sharp-aws-lambda-layer/actions?query=workflow:"Build+Layers")
+[![GitHub release](https://img.shields.io/github/release/cbschuld/sharp-aws-lambda-layer?include_prereleases=&sort=semver&color=blue)](https://github.com/cbschuld/sharp-aws-lambda-layer/releases/)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue)](#license)
-[![Build](https://github.com/cbschuld/sharp-aws-lambda-layer/workflows/Build%20Layers/badge.svg)](https://github.com/cbschuld/sharp-aws-lambda-layer/actions?query=workflow:"Build%20Layers")
+[![issues - sharp-aws-lambda-layer](https://img.shields.io/github/issues/cbschuld/sharp-aws-lambda-layer)](https://github.com/cbschuld/sharp-aws-lambda-layer/issues)
 
 Prebuilt Sharp AWS Lambda Layer for Node.js 18, 20, and 22. Optimized, bundled, and minified Sharp binaries for x86_64 and arm64 architectures. Improve cold starts with lightweight Sharp builds, ready for Serverless Framework, AWS SAM, and SST deployments.
 
@@ -21,7 +22,7 @@ A pre-built [sharp](https://www.npmjs.com/package/sharp) AWS Lambda layer optimi
 - Separate builds for `x64` and `arm64`.
 - Daily checks designed to auto-release on new `sharp` versions.
 - Optimized for cold starts on AWS Lambda.
-- Ideal for use with AWS SAM, SST and Serverless Framework.
+- Ideal for use with AWS CDK, AWS SAM, SST and Serverless Framework.
 
 ## Why Separate Builds?
 
@@ -69,6 +70,40 @@ aws lambda publish-layer-version \
   --compatible-architectures arm64
 ```
 
+### AWS CDK Usage Example
+
+```typescript
+import * as lambda from 'aws-cdk-lib/aws-lambda';
+import { Stack, StackProps } from 'aws-cdk-lib';
+import { Construct } from 'constructs';
+
+export class MyLambdaStack extends Stack {
+  constructor(scope: Construct, id: string, props?: StackProps) {
+    super(scope, id, props);
+
+    const sharpLayer = new lambda.LayerVersion(this, 'SharpLayer', {
+      code: lambda.Code.fromAsset('layers/sharp'),
+      compatibleArchitectures: [lambda.Architecture.ARM_64],
+      compatibleRuntimes: [
+        lambda.Runtime.NODEJS_18_X,
+        lambda.Runtime.NODEJS_20_X,
+        lambda.Runtime.NODEJS_22_X,
+      ],
+      description: 'Sharp Lambda Layer for ARM64',
+      license: 'Apache-2.0',
+    });
+
+    const myFunction = new lambda.Function(this, 'MyFunction', {
+      runtime: lambda.Runtime.NODEJS_20_X,
+      handler: 'index.handler',
+      code: lambda.Code.fromAsset('lambda-handler-directory'),
+      architecture: lambda.Architecture.ARM_64,
+      layers: [sharpLayer],
+    });
+  }
+}
+```
+
 ### SST Usage Example
 
 ```javascript
@@ -78,6 +113,20 @@ layers: [
     compatibleArchitectures: [lambda.Architecture.ARM_64],
   })
 ]
+```
+
+### Serverless Framework Usage Example
+
+In your `serverless.yml`:
+
+```yaml
+functions:
+  myFunction:
+    handler: handler.main
+    runtime: nodejs20.x
+    architecture: arm64
+    layers:
+      - arn:aws:lambda:us-west-2:123456789012:layer:sharp-v0-34-arm64:1
 ```
 
 ### AWS SAM Usage Example
@@ -110,11 +159,10 @@ cd sharp-aws-lambda-layer
 
 ## License
 
-Apache License 2.0 - [http://www.apache.org/licenses/LICENSE-2.0](http://www.apache.org/licenses/LICENSE-2.0)
+Released under [Apache 2.0](/LICENSE) by [@cbschuld](https://github.com/cbschuld).
 
 ## References
 
 - [Sharp Installation Guide](https://sharp.pixelplumbing.com/install#aws-lambda)
 - [AWS Lambda Layers](https://docs.aws.amazon.com/lambda/latest/dg/configuration-layers.html)
 - [Optimizing Node.js Dependencies in Lambda](https://aws.amazon.com/blogs/compute/optimizing-node-js-dependencies-in-aws-lambda/)
-
