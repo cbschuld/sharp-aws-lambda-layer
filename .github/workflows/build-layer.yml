@@ -1,0 +1,113 @@
+name: Build lambda layer for sharp
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+  schedule:
+    - cron:  '0 4 * * *'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Setup node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '^20.10.0'
+      - name: Checkout
+        uses: actions/checkout@v3
+      - name: Install esbuild
+        run: npm i -g esbuild@0.18.20
+
+      - name: Install sharp - arm64
+        run: npm i --save-exact --os=linux --cpu=arm64 --libc=glibc sharp
+      - name: Remove musl-based binary # @npm/cli#6914
+        run: rm -rf node_modules/@img/*-linuxmusl*
+      - name: Get sharp version
+        id: version
+        uses: notiz-dev/github-action-json-property@release
+        with:
+          path: 'package.json'
+          prop_path: 'dependencies.sharp'
+      - name: esbuild - arm64
+        run: esbuild --bundle ./node_modules/sharp/ --outfile=index.js --minify --format=cjs --platform=node
+      - name: Zip - arm64
+        run: |
+          mkdir -p nodejs/node_modules/sharp/lib
+          mv index.js nodejs/node_modules/sharp/lib/
+          mv node_modules/sharp/package.json nodejs/node_modules/sharp/
+          mv node_modules/sharp/LICENSE nodejs/node_modules/sharp/
+          mv node_modules/sharp/lib/index.d.ts nodejs/node_modules/sharp/lib/
+          mv node_modules/@img nodejs/node_modules/
+          zip -r release-arm64 nodejs
+      - name: Clean arm64
+        run: rm -rf nodejs node_modules # keep package.json for keeping the version
+
+      - name: Install sharp - x64
+        run: npm i --save-exact --os=linux --cpu=x64 --libc=glibc sharp
+      - name: Remove musl-based binary # @npm/cli#6914
+        run: rm -rf node_modules/@img/*-linuxmusl*
+      - name: esbuild - x64
+        run: esbuild --bundle ./node_modules/sharp/ --outfile=index.js --minify --format=cjs --platform=node
+      - name: Zip - x64
+        run: |
+          mkdir -p nodejs/node_modules/sharp/lib
+          mv index.js nodejs/node_modules/sharp/lib/
+          mv node_modules/sharp/package.json nodejs/node_modules/sharp/
+          mv node_modules/sharp/LICENSE nodejs/node_modules/sharp/
+          mv node_modules/sharp/lib/index.d.ts nodejs/node_modules/sharp/lib/
+          mv node_modules/@img nodejs/node_modules/
+          zip -r release-x64 nodejs
+      - name: Clean x64
+        run: rm -rf nodejs node_modules # keep package.json for keeping the version
+
+      - name: Install sharp - all
+        run: |
+          npm i --os=linux --cpu=x64 --libc=glibc sharp
+          npm i --os=linux --cpu=arm64 --libc=glibc sharp
+      - name: Remove musl-based binary # @npm/cli#6914
+        run: rm -rf node_modules/@img/*-linuxmusl*
+      - name: esbuild - all
+        run: esbuild --bundle ./node_modules/sharp/ --outfile=index.js --minify --format=cjs --platform=node
+      - name: Zip - all
+        run: |
+          mkdir -p nodejs/node_modules/sharp/lib
+          mv index.js nodejs/node_modules/sharp/lib/
+          mv node_modules/sharp/package.json nodejs/node_modules/sharp/
+          mv node_modules/sharp/LICENSE nodejs/node_modules/sharp/
+          mv node_modules/sharp/lib/index.d.ts nodejs/node_modules/sharp/lib/
+          mv node_modules/@img nodejs/node_modules/
+          zip -r release-all nodejs
+
+      - name: Test
+        run: |
+          cp test.mjs nodejs/test.mjs
+          node nodejs/test.mjs
+          if [ ! -f test.png ]; then exit 1 ; fi
+
+      - name: Current version
+        id: version_current
+        run: echo "sharpver=$(cat PREVIOUS_VERSION.txt)" >> $GITHUB_ENV
+      - name: Update PREVIOUS_VERSION.txt
+        if: ${{ env.sharpver != steps.version.outputs.prop && github.event_name != 'pull_request' }}
+        run: echo ${{steps.version.outputs.prop}} > PREVIOUS_VERSION.txt
+      - name: Create commit
+        uses: stefanzweifel/git-auto-commit-action@v4
+        if: ${{ env.sharpver != steps.version.outputs.prop && github.event_name != 'pull_request' }}
+        with:
+          commit_message: ${{steps.version.outputs.prop}}
+          file_pattern: PREVIOUS_VERSION.txt
+      - name: Create release
+        uses: softprops/action-gh-release@v1
+        if: ${{ env.sharpver != steps.version.outputs.prop && github.event_name != 'pull_request' }}
+        with:
+          files: "release*"
+          body: ${{steps.version.outputs.prop}}
+          tag_name: ${{steps.version.outputs.prop}}
