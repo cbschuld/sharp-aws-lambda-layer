@@ -8,6 +8,11 @@ on:
   schedule:
     - cron: '0 16 * * *'
   workflow_dispatch:
+    inputs:
+      sharp_version:
+        description: 'Sharp version to build'
+        required: false
+        default: 'latest'
 
 jobs:
   build:
@@ -33,11 +38,21 @@ jobs:
 
       - name: Install sharp (${{ matrix.arch }})
         run: |
-          if [ "${{ matrix.arch }}" = "all" ]; then
-            npm i --os=linux --cpu=x64 --libc=glibc sharp
-            npm i --os=linux --cpu=arm64 --libc=glibc sharp
+          VERSION="${{ github.event.inputs.sharp_version }}"
+          if [ "$VERSION" = "latest" ]; then
+            if [ "${{ matrix.arch }}" = "all" ]; then
+              npm i --os=linux --cpu=x64 --libc=glibc sharp
+              npm i --os=linux --cpu=arm64 --libc=glibc sharp
+            else
+              npm i --save-exact --os=linux --cpu=${{ matrix.arch }} --libc=glibc sharp
+            fi
           else
-            npm i --save-exact --os=linux --cpu=${{ matrix.arch }} --libc=glibc sharp
+            if [ "${{ matrix.arch }}" = "all" ]; then
+              npm i --os=linux --cpu=x64 --libc=glibc sharp@$VERSION
+              npm i --os=linux --cpu=arm64 --libc=glibc sharp@$VERSION
+            else
+              npm i --save-exact --os=linux --cpu=${{ matrix.arch }} --libc=glibc sharp@$VERSION
+            fi
           fi
 
       - name: Extract Sharp version
@@ -119,6 +134,15 @@ jobs:
           path: 'artifacts/sharp-x64/nodejs/node_modules/sharp/package.json'
           prop_path: 'version'
 
+      - name: Check if version is pre-release
+        id: prerelease
+        run: |
+          if [[ "${{ steps.version.outputs.prop }}" == *-* ]]; then
+            echo "is_prerelease=true" >> $GITHUB_ENV
+          else
+            echo "is_prerelease=false" >> $GITHUB_ENV
+          fi
+
       - name: Skip if no version change
         if: ${{ env.sharpver == steps.version.outputs.prop }}
         run: echo "🧠 No Sharp update detected. Skipping release."
@@ -142,6 +166,7 @@ jobs:
           files: artifacts/**/*.zip
           body: Sharp version ${{ steps.version.outputs.prop }}
           tag_name: ${{ steps.version.outputs.prop }}
+          prerelease: ${{ env.is_prerelease }}
 
       - name: Notify Discord
         if: ${{ env.sharpver != steps.version.outputs.prop }}
