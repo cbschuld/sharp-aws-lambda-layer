@@ -8,4 +8,4 @@ await sharp({
   }
 }).toFile('test.png')
 
-console.log('Sharp Works!')
+console.log('Sharp Works! (test.png was created)')

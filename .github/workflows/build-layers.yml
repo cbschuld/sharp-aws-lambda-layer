@@ -56,10 +56,10 @@ jobs:
       - name: Package Lambda layer (${{ matrix.arch }})
         run: |
           mkdir -p nodejs/node_modules/sharp/lib
-          mv index.js nodejs/node_modules/sharp/lib/
           mv node_modules/sharp/package.json nodejs/node_modules/sharp/
-          mv node_modules/sharp/LICENSE nodejs/node_modules/sharp/
+          mv index.js nodejs/node_modules/sharp/lib/
           mv node_modules/sharp/lib/index.d.ts nodejs/node_modules/sharp/lib/
+          mv node_modules/sharp/LICENSE nodejs/node_modules/sharp/
           mv node_modules/@img nodejs/node_modules/ || true
           zip -r release-${{ matrix.arch }} nodejs
 
