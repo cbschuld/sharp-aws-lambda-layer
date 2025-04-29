@@ -110,22 +110,21 @@ jobs:
     needs: [build, test]
     if: ${{ github.event_name != 'pull_request' }}
     runs-on: ubuntu-latest
-    # Add permissions if needed for writing to version.txt and creating releases
     permissions:
-      contents: write # Needed for committing version.txt and creating releases
+      contents: write    # To commit version.txt
+      pull-requests: read # Needed by gh release view potentially? Better safe than sorry.
+      # No specific permission needed for reading public repo releases via gh
 
     steps:
       - name: Checkout
         uses: actions/checkout@v3
         with:
-          # Fetch depth 0 to get all history for version comparison if needed,
-          # though reading version.txt is simpler here.
           fetch-depth: 0
 
       - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
-          path: artifacts # Download all artifacts to ./artifacts/<artifact-name>
+          path: artifacts
 
       - name: Unzip sharp-x64 to access package.json
         run: |
@@ -134,97 +133,113 @@ jobs:
       - name: Read previous version from version.txt
         id: previous
         run: |
-          # Handle case where version.txt might not exist yet
           if [[ -f version.txt ]]; then
             echo "sharpver=$(cat version.txt)" >> $GITHUB_ENV
           else
-            echo "sharpver=0.0.0" >> $GITHUB_ENV # Default if file doesn't exist
+            echo "sharpver=0.0.0" >> $GITHUB_ENV
           fi
-        # Continue even if version.txt doesn't exist on first run
         continue-on-error: true
 
       - name: Get new sharp version from downloaded artifact
         id: version
         uses: notiz-dev/github-action-json-property@release
         with:
-          # Path to the package.json within the unzipped artifact
           path: 'artifacts/sharp-x64/nodejs/node_modules/sharp/package.json'
           prop_path: 'version'
 
-      - name: Check if new version is a pre-release
-        id: prerelease # Give the step an ID if you wanted to use outputs instead of env
+      # --- NEW: Check GitHub Release status using gh CLI ---
+      - name: Check GitHub Release status for v${{ steps.version.outputs.prop }}
+        id: gh_release_check
+        env:
+          # Provide the GITHUB_TOKEN to the gh CLI
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Extract the version number for easier use
+          SHARP_VERSION: ${{ steps.version.outputs.prop }}
         run: |
-          SHARP_VERSION="${{ steps.version.outputs.prop }}"
-          if [[ "$SHARP_VERSION" == *-* ]]; then
-            echo "Detected pre-release version: $SHARP_VERSION"
+          # Construct the tag name (usually 'v' + version)
+          TAG_NAME="v$SHARP_VERSION"
+          echo "Checking GitHub release status for tag: $TAG_NAME"
+
+          # Use gh release view to get the isPrerelease field.
+          # -q filters the JSON output.
+          # We redirect stderr to /dev/null to suppress errors if the release/tag doesn't exist.
+          # We add || echo "error" to handle the case where the gh command fails (e.g., tag not found)
+          IS_PRERELEASE_STATUS=$(gh release view "$TAG_NAME" --repo lovell/sharp --json isPrerelease -q .isPrerelease 2>/dev/null || echo "error")
+
+          echo "GitHub API check result: $IS_PRERELEASE_STATUS"
+
+          if [[ "$IS_PRERELEASE_STATUS" == "true" ]]; then
+            echo "GitHub marks release $TAG_NAME as pre-release."
             echo "IS_PRERELEASE=true" >> $GITHUB_ENV
-          else
-            echo "Detected stable version: $SHARP_VERSION"
+          elif [[ "$IS_PRERELEASE_STATUS" == "false" ]]; then
+            echo "GitHub marks release $TAG_NAME as stable (not pre-release)."
             echo "IS_PRERELEASE=false" >> $GITHUB_ENV
+          else
+            # Handle error or tag not found case - assume stable? Or fail?
+            # Assuming stable if tag not found on GitHub releases is safer
+            # as the package *was* successfully installed from npm.
+            echo "WARN: Could not determine release status for tag $TAG_NAME from GitHub API (may not exist as a release yet or an error occurred). Assuming stable."
+            echo "IS_PRERELEASE=false" >> $GITHUB_ENV
+            # Alternatively, you could fail the job here if needed:
+            # echo "ERROR: Could not determine release status for tag $TAG_NAME from GitHub API."
+            # exit 1
           fi
 
-      # --- Optional: Skip logic based on version comparison ---
-      # This logic prevents re-releasing the *same* version.
-      # It also only updates version.txt for *stable* releases.
+      # --- Skip check logic (no changes needed here) ---
       - name: Check if release should be skipped
         id: skip_check
         run: |
           echo "Previous version: ${{ env.sharpver }}"
           echo "New version: ${{ steps.version.outputs.prop }}"
-          echo "Is pre-release: ${{ env.IS_PRERELEASE }}"
+          echo "Is pre-release (from GitHub): ${{ env.IS_PRERELEASE }}"
           if [[ "${{ env.sharpver }}" == "${{ steps.version.outputs.prop }}" ]]; then
             echo "Version hasn't changed (${{ steps.version.outputs.prop }}). Skipping release."
+            # Use set-output for cross-platform compatibility if needed, but GITHUB_ENV works here
             echo "SKIP_RELEASE=true" >> $GITHUB_ENV
           else
             echo "Version changed or first run. Proceeding with release checks."
             echo "SKIP_RELEASE=false" >> $GITHUB_ENV
           fi
 
-      # --- Update version.txt only for new STABLE releases ---
+      # --- Update version.txt logic (no changes needed here) ---
       - name: Update version.txt for new stable release
-        # Run only if it's NOT a pre-release AND the version has changed
         if: steps.skip_check.outputs.SKIP_RELEASE == 'false' && env.IS_PRERELEASE == 'false'
         run: |
           echo "Updating version.txt to ${{ steps.version.outputs.prop }}"
           echo "${{ steps.version.outputs.prop }}" > version.txt
 
       - name: Commit version.txt update
-        # Run only if version.txt was updated (new stable release)
         if: steps.skip_check.outputs.SKIP_RELEASE == 'false' && env.IS_PRERELEASE == 'false'
         uses: stefanzweifel/git-auto-commit-action@v4
         with:
           commit_message: "Update sharp to ${{ steps.version.outputs.prop }}"
           file_pattern: version.txt
-          # Add push options if your branch protection requires it
-          # push_options: '--force'
 
-      # --- Create GitHub Release ---
+      # --- Create GitHub Release logic (no changes needed here, uses IS_PRERELEASE env var) ---
       - name: Create GitHub Release
-        # Run only if the version has actually changed (don't re-release the same version)
         if: steps.skip_check.outputs.SKIP_RELEASE == 'false'
         uses: softprops/action-gh-release@v1
         with:
-          files: artifacts/**/*.zip # Upload all zip files from the artifacts subdirectories
-          body: | # Use a multi-line body for better formatting
+          files: artifacts/**/*.zip
+          body: |
             Sharp version ${{ steps.version.outputs.prop }} Lambda Layer.
+            Installed from npm, GitHub release status checked.
 
             Architectures included:
             - arm64
             - x64
             - all (combined node_modules for arm64 & x64)
-          tag_name: v${{ steps.version.outputs.prop }} # Add 'v' prefix to tag, common practice
-          name: Sharp Layer v${{ steps.version.outputs.prop }} # Release title
-          # Use the environment variable set in the 'Check if new version is a pre-release' step
+          tag_name: v${{ steps.version.outputs.prop }}
+          name: Sharp Layer v${{ steps.version.outputs.prop }}
+          # Uses the IS_PRERELEASE variable set by the gh_release_check step
           prerelease: ${{ env.IS_PRERELEASE }}
         env:
-            GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # Explicitly pass the token
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # --- Notify Discord ---
+      # --- Notify Discord logic (no changes needed here) ---
       - name: Notify Discord
-        # Notify only if a new release was created
         if: steps.skip_check.outputs.SKIP_RELEASE == 'false'
         run: |
-          # Construct message based on whether it's a pre-release or stable release
           if [[ "${{ env.IS_PRERELEASE }}" == "true" ]]; then
             RELEASE_TYPE="Pre-release"
           else
