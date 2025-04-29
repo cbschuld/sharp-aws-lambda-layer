@@ -2,7 +2,7 @@
 
 [![GitHub tag](https://img.shields.io/github/tag/cbschuld/sharp-aws-lambda-layer?include_prereleases=&sort=semver&color=blue)](https://github.com/cbschuld/sharp-aws-lambda-layer/releases/)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue)](#license)
-[![Build](https://github.com/cbschuld/sharp-aws-lambda-layer/workflows/build%20layers/badge.svg)](https://github.com/cbschuld/sharp-aws-lambda-layer/actions?query=workflow:"build%20layers")
+[![Build](https://github.com/cbschuld/sharp-aws-lambda-layer/workflows/Build%20Layers/badge.svg)](https://github.com/cbschuld/sharp-aws-lambda-layer/actions?query=workflow:"Build%20Layers")
 
 Prebuilt Sharp AWS Lambda Layer for Node.js 18, 20, and 22. Optimized, bundled, and minified Sharp binaries for x86_64 and arm64 architectures. Improve cold starts with lightweight Sharp builds, ready for Serverless Framework, AWS SAM, and SST deployments.
 
