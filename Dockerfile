@@ -1,59 +1,48 @@
-# Use a multi-arch base image
-FROM public.ecr.aws/sam/build-nodejs20.x:latest
+# Use Amazon Linux 2 base image to match AWS Lambda runtime
+FROM public.ecr.aws/lambda/nodejs:20
 
 WORKDIR /build
 
-# Declare build argument for target architecture
+# Declare build arguments
 ARG TARGET_ARCH
-ARG TARGET_PLATFORM=linux # Default platform
+ARG TARGET_PLATFORM=linux
 
-# Verify the build environment architecture (optional debug step)
-RUN echo "Building on architecture: $(uname -m)"
-RUN echo "TARGET_ARCH argument: ${TARGET_ARCH}"
-RUN echo "TARGET_PLATFORM argument: ${TARGET_PLATFORM}"
+# Install build dependencies for sharp and libvips
+RUN yum update -y && \
+    yum install -y gcc-c++ make python3 pkgconfig tar gzip && \
+    # Install libvips and its dependencies
+    yum install -y libvips42 libvips-devel && \
+    # Clean up to reduce layer size
+    yum clean all && rm -rf /var/cache/yum
 
-# Copy necessary files
+# Verify build environment
+RUN echo "Building for architecture: ${TARGET_ARCH}" && \
+    echo "Target platform: ${TARGET_PLATFORM}"
+
+# Copy package files
 COPY package.json package-lock.json webpack.config.js ./
-# Copy other potential source files if needed by webpack or sharp install
-# COPY src ./src
 
-# Install dependencies
-RUN npm --no-optional --no-audit --progress=false --arch=${TARGET_ARCH} --platform=${TARGET_PLATFORM} install
+# Install dependencies with architecture-specific flags
+RUN npm install --no-optional --no-audit --progress=false \
+    --arch=${TARGET_ARCH} --platform=${TARGET_PLATFORM}
 
-# --- TEMPORARY DEBUG STEP ---
-# List the FULL contents of the sharp directory AFTER install
-RUN echo ">>> Listing FULL contents of /build/node_modules/sharp/ after install <<<" && \
-    ls -lR /build/node_modules/sharp/ || echo "Sharp directory listing failed?"
-# --- END TEMPORARY DEBUG STEP ---
+# Debug: List sharp directory contents
+RUN echo "Listing /build/node_modules/sharp/:" && \
+    ls -lR /build/node_modules/sharp/ || echo "Sharp directory listing failed"
 
-# Run webpack (this will likely still error, but we need the listing first)
-RUN TARGET_ARCH=${TARGET_ARCH} node ./node_modules/webpack/bin/webpack.js
+# Run Webpack to package the layer
+RUN TARGET_ARCH=${TARGET_ARCH} npm run build
 
-# --- Smoke Test ---
-RUN echo ">>> Running smoke test on packaged layer..." && \
-  # Try to execute the node command in a subshell group ()
-  ( \
+# Debug: List dist directory contents
+RUN echo "Listing /build/dist/:" && \
+    ls -lR /build/dist/
+
+# Smoke test to verify sharp
+RUN echo "Running smoke test..." && \
     node -e " \
-      const sharp = require('/build/dist/nodejs/node_modules/sharp'); \
-      console.log('>>> SUCCESS: require(\'sharp\') loaded.'); \
-      if (sharp && sharp.versions) { \
+        const sharp = require('/build/dist/nodejs/node_modules/sharp'); \
+        console.log('Sharp loaded successfully'); \
         console.log('Sharp versions:', sharp.versions); \
-      } else { \
-        console.log('Sharp loaded, but versions property not found.'); \
-      } \
-    " \
-  ) || \
-  # If the node command fails (exits non-zero), execute this block
-  ( \
-    echo ">>> FAILURE: Node smoke test failed!" && \
-    echo ">>> Listing /build/dist/nodejs/node_modules/sharp contents on failure:" && \
-    ls -lR /build/dist/nodejs/node_modules/sharp && \
-    exit 1 \
-  )
-# --- End Smoke Test ---
-
-# Simple test to ensure sharp loads correctly for the target architecture
-# Note: This might fail now if webpack failed, run it only after successful webpack
-# RUN node -e "console.log(require('sharp')('./package.json'))"
+    " || (echo "Smoke test failed!" && ls -lR /build/dist/nodejs/node_modules/sharp && exit 1)
 
 # No entrypoint needed

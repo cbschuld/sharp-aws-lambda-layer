@@ -1,69 +1,108 @@
-name: Build Sharp Lambda Layers
+name: Build Sharp Lambda Layer
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
 
 jobs:
-  build-layers:
+  setup:
+    runs-on: ubuntu-latest
+    outputs:
+      sharp_version: ${{ steps.vars.outputs.sharp_version }}
+      release_exists: ${{ steps.vars.outputs.release_exists }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install jq
+        run: sudo apt-get update && sudo apt-get install -y jq
+
+      - name: Get Sharp Version and Check Release
+        id: vars
+        run: |
+          sharp_version=$(jq -r '.packages."node_modules/sharp".version' package-lock.json)
+          if [ -z "$sharp_version" ] || [ "$sharp_version" == "null" ]; then
+            echo "Error: Could not extract sharp version"
+            exit 1
+          fi
+          echo "sharp_version=$sharp_version" >> $GITHUB_OUTPUT
+
+          release_exists="false"
+          if git rev-parse "v${sharp_version}" >/dev/null 2>&1 || git ls-remote --tags origin | grep -q "refs/tags/v${sharp_version}$"; then
+            release_exists="true"
+          fi
+          echo "release_exists=$release_exists" >> $GITHUB_OUTPUT
+
+  build:
+    needs: setup
     runs-on: ubuntu-latest
     strategy:
       matrix:
         include:
-          - arch: x64
-            image: public.ecr.aws/lambda/nodejs:20
-          - arch: arm64
-            image: public.ecr.aws/lambda/nodejs:20-arm64
-
+          - platform: linux/amd64
+            arch: x64
+          - platform: linux/arm64
+            arch: arm64
     steps:
-      - name: Checkout repo
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Build & zip Sharp layer (${{ matrix.arch }})
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker Image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: ${{ matrix.platform }}
+          build-args: |
+            TARGET_ARCH=${{ matrix.arch }}
+          load: true
+          tags: sharp-layer:${{ matrix.arch }}
+
+      - name: Create dist Directory
+        run: mkdir -p dist
+
+      - name: Copy Artifact
         run: |
-          # mount workspace into the Lambda build image
-          docker run --rm \
-            -v "${{ github.workspace }}":/project \
-            -w /project \
-            ${{ matrix.image }} \
-            bash -exlc "
-              # install only runtime deps for Sharp
-              npm ci --no-optional --no-audit --production --arch=${{ matrix.arch }} --platform=linux
-              
-              # stage into the Lambda layer layout
-              mkdir -p layer/nodejs/node_modules
-              cp -R node_modules/sharp layer/nodejs/node_modules/
+          docker run --rm -v "${{ github.workspace }}/dist:/output" \
+            sharp-layer:${{ matrix.arch }} \
+            cp /build/dist/sharp-layer-${{ matrix.arch }}.zip /output/
 
-              # zip it
-              (cd layer && zip -r ../sharp-layer-${{ matrix.arch }}.zip .)
-            "
-
-      - name: Upload artifacts
+      - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: sharp-layer-${{ matrix.arch }}
-          path: sharp-layer-${{ matrix.arch }}.zip
+          path: dist/sharp-layer-${{ matrix.arch }}.zip
 
   release:
-    needs: build-layers
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [setup, build]
     runs-on: ubuntu-latest
-
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
-      - name: Download Sharp zips
+      - name: Download Artifacts
         uses: actions/download-artifact@v4
         with:
           path: dist
 
-      - name: Create or update GitHub Release
+      - name: Create GitHub Release
         uses: svenstaro/upload-release-action@v2
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
-          tag: v${{ github.sha }}
-          release_name: Sharp Lambda Layer
-          file: dist/*.zip
+          tag: v${{ needs.setup.outputs.sharp_version }}
+          release_name: Sharp v${{ needs.setup.outputs.sharp_version }} Layer
+          file: dist/sharp-layer-*/*.zip
           file_glob: true
           overwrite: true
-          body: |
-            AWS Lambda layers for Sharp (x64 and arm64).  
+          body: "AWS Lambda Layer for Sharp v${{ needs.setup.outputs.sharp_version }} (x64 and arm64)."
