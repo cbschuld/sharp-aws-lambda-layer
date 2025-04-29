@@ -1,24 +1,29 @@
-# Use Amazon Linux 2 base image explicitly
-FROM amazonlinux:2
+# Stage 1: Build dependencies
+FROM amazonlinux:2 AS builder
 
-# Install Node.js 20 (to match AWS Lambda runtime)
-RUN curl -fsSL https://rpm.nodesource.com/setup_20.x | bash - && \
-    yum install -y nodejs && \
-    npm install -g npm@latest
-
-WORKDIR /build
-
-# Declare build arguments
-ARG TARGET_ARCH
-ARG TARGET_PLATFORM=linux
-
-# Install build dependencies for sharp and libvips
+# Install dependencies for libvips
 RUN yum update -y && \
     yum install -y gcc-c++ make python3 pkgconf tar gzip && \
     # Install libvips and its dependencies
     yum install -y libvips libvips-devel && \
     # Clean up to reduce layer size
     yum clean all && rm -rf /var/cache/yum
+
+# Stage 2: Final image
+FROM public.ecr.aws/lambda/nodejs:20
+
+WORKDIR /build
+
+# Copy libvips libraries from builder stage
+COPY --from=builder /usr/lib64/libvips*.so* /usr/lib64/
+COPY --from=builder /usr/lib64/libglib-2.0*.so* /usr/lib64/
+COPY --from=builder /usr/lib64/libgobject-2.0*.so* /usr/lib64/
+COPY --from=builder /usr/lib64/libgmodule-2.0*.so* /usr/lib64/
+COPY --from=builder /usr/lib64/libffi*.so* /usr/lib64/
+
+# Declare build arguments
+ARG TARGET_ARCH
+ARG TARGET_PLATFORM=linux
 
 # Verify build environment
 RUN echo "Building for architecture: ${TARGET_ARCH}" && \
