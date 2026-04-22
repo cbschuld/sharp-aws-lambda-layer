@@ -5,14 +5,14 @@
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue)](#license)
 [![issues - sharp-aws-lambda-layer](https://img.shields.io/github/issues/cbschuld/sharp-aws-lambda-layer)](https://github.com/cbschuld/sharp-aws-lambda-layer/issues)
 
-Prebuilt Sharp AWS Lambda Layer for Node.js 18, 20, and 22. Optimized, bundled, and minified Sharp binaries for x86_64 and arm64 architectures. Improve cold starts with lightweight Sharp builds, ready for Serverless Framework, AWS SAM, and SST deployments.
+Prebuilt Sharp AWS Lambda Layer for Node.js 18, 20, 22, and 24. Optimized, bundled, and minified Sharp binaries for x86_64 and arm64 architectures. Improve cold starts with lightweight Sharp builds, ready for Serverless Framework, AWS SAM, and SST deployments.
 
 ## About
 
 A pre-built [sharp](https://www.npmjs.com/package/sharp) AWS Lambda layer optimized for cold start performance.
 
 - Supports **x86\_64** and **arm64** architectures.
-- Compatible with Node.js **18.x**, **20.x**, and **22.x** runtimes.
+- Compatible with Node.js **18.x**, **20.x**, **22.x**, and **24.x** runtimes.
 - Automatically updated and tested using GitHub Actions.
 - Bundled and minified with `esbuild`.
 - Lightweight layer files (\~7MB).
@@ -58,7 +58,7 @@ aws lambda publish-layer-version \
   --description "Sharp Layer for x86_64" \
   --license-info "Apache-2.0" \
   --zip-file fileb://release-x64.zip \
-  --compatible-runtimes nodejs18.x nodejs20.x nodejs22.x \
+  --compatible-runtimes nodejs18.x nodejs20.x nodejs22.x nodejs24.x \
   --compatible-architectures x86_64
 
 aws lambda publish-layer-version \
@@ -66,7 +66,7 @@ aws lambda publish-layer-version \
   --description "Sharp Layer for arm64" \
   --license-info "Apache-2.0" \
   --zip-file fileb://release-arm64.zip \
-  --compatible-runtimes nodejs18.x nodejs20.x nodejs22.x \
+  --compatible-runtimes nodejs18.x nodejs20.x nodejs22.x nodejs24.x \
   --compatible-architectures arm64
 ```
 
@@ -88,6 +88,7 @@ export class MyLambdaStack extends Stack {
         lambda.Runtime.NODEJS_18_X,
         lambda.Runtime.NODEJS_20_X,
         lambda.Runtime.NODEJS_22_X,
+        lambda.Runtime.NODEJS_24_X,
       ],
       description: 'Sharp Lambda Layer for ARM64',
       license: 'Apache-2.0',
@@ -143,6 +144,7 @@ SharpLayer:
       - nodejs18.x
       - nodejs20.x
       - nodejs22.x
+      - nodejs24.x
 ```
 
 ## Building (Optional)
