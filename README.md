@@ -5,7 +5,7 @@
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue)](#license)
 [![issues - sharp-aws-lambda-layer](https://img.shields.io/github/issues/cbschuld/sharp-aws-lambda-layer)](https://github.com/cbschuld/sharp-aws-lambda-layer/issues)
 
-Prebuilt Sharp AWS Lambda Layer for Node.js 18, 20, 22, and 24. Optimized, bundled, and minified Sharp binaries for x86_64 and arm64 architectures. Improve cold starts with lightweight Sharp builds, ready for Serverless Framework, AWS SAM, and SST deployments.
+Prebuilt Sharp AWS Lambda Layer for Node.js 18, 20, 22, and 24. Architecture-specific Sharp binaries for x86_64 and arm64, ready to drop in. Improve cold starts with lightweight Sharp builds, ready for Serverless Framework, AWS SAM, and SST deployments.
 
 ## About
 
@@ -14,7 +14,7 @@ A pre-built [sharp](https://www.npmjs.com/package/sharp) AWS Lambda layer optimi
 - Supports **x86\_64** and **arm64** architectures.
 - Compatible with Node.js **18.x**, **20.x**, **22.x**, and **24.x** runtimes.
 - Automatically updated and tested using GitHub Actions.
-- Bundled and minified with `esbuild`.
+- Architecture-specific native binaries installed straight from npm.
 - Lightweight layer files (\~7MB).
 
 ## Features
@@ -26,7 +26,7 @@ A pre-built [sharp](https://www.npmjs.com/package/sharp) AWS Lambda layer optimi
 
 ## Why Separate Builds?
 
-Bundling dependencies and targeting the correct architecture reduces cold start latency dramatically. See [Optimizing Node.js dependencies in AWS Lambda](https://aws.amazon.com/blogs/compute/optimizing-node-js-dependencies-in-aws-lambda/) for more.
+Packaging dependencies and targeting the correct architecture reduces cold start latency dramatically. See [Optimizing Node.js dependencies in AWS Lambda](https://aws.amazon.com/blogs/compute/optimizing-node-js-dependencies-in-aws-lambda/) for more.
 
 ## Download
 

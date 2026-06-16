@@ -2,9 +2,9 @@ name: Build Layers
 
 on:
   push:
-    branches: [master]
+    branches: [main]
   pull_request:
-    branches: [master]
+    branches: [main]
   schedule:
     - cron: '0 16 * * *'
   workflow_dispatch:
@@ -26,33 +26,35 @@ jobs:
 
     steps:
       - name: Checkout repo
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 22
 
-      - name: Install esbuild
-        run: npm i -g esbuild@latest
-
       - name: Install sharp (${{ matrix.arch }})
+        env:
+          SHARP_VERSION: ${{ github.event.inputs.sharp_version }}
         run: |
-          VERSION="${{ github.event.inputs.sharp_version }}"
-          if [ "$VERSION" = "latest" ]; then
-            if [ "${{ matrix.arch }}" = "all" ]; then
-              npm i --os=linux --cpu=x64 --libc=glibc sharp
-              npm i --os=linux --cpu=arm64 --libc=glibc sharp
-            else
-              npm i --save-exact --os=linux --cpu=${{ matrix.arch }} --libc=glibc sharp
-            fi
+          if [ -z "$SHARP_VERSION" ] || [ "$SHARP_VERSION" = "latest" ]; then
+            SPEC="sharp"
           else
-            if [ "${{ matrix.arch }}" = "all" ]; then
-              npm i --os=linux --cpu=x64 --libc=glibc sharp@$VERSION
-              npm i --os=linux --cpu=arm64 --libc=glibc sharp@$VERSION
-            else
-              npm i --save-exact --os=linux --cpu=${{ matrix.arch }} --libc=glibc sharp@$VERSION
-            fi
+            SPEC="sharp@$SHARP_VERSION"
+          fi
+          if [ "${{ matrix.arch }}" = "all" ]; then
+            # Install x64 into the working dir: provides the (arch-independent) sharp
+            # JS package plus the x64 @img native packages.
+            npm i --os=linux --cpu=x64 --libc=glibc "$SPEC"
+            # npm prunes optional @img packages that don't match --cpu, so a second
+            # in-place install would drop x64. Install arm64 into a temp dir and merge
+            # its native @img packages in so the layer works on both architectures.
+            mkdir arm-tmp
+            ( cd arm-tmp && npm init -y >/dev/null && npm i --os=linux --cpu=arm64 --libc=glibc "$SPEC" )
+            cp -Rn arm-tmp/node_modules/@img/* node_modules/@img/
+            rm -rf arm-tmp
+          else
+            npm i --save-exact --os=linux --cpu=${{ matrix.arch }} --libc=glibc "$SPEC"
           fi
 
       - name: Extract Sharp version
@@ -62,20 +64,22 @@ jobs:
           path: 'package.json'
           prop_path: 'dependencies.sharp'
 
-      - name: esbuild bundle
+      - name: Verify @img arch packages (all)
+        if: ${{ matrix.arch == 'all' }}
         run: |
-          esbuild --bundle ./node_modules/sharp/ \
-            --outfile=index.js \
-            --minify --format=cjs --platform=node
+          for pkg in sharp-linux-x64 sharp-linux-arm64 sharp-libvips-linux-x64 sharp-libvips-linux-arm64; do
+            if [ ! -d "node_modules/@img/$pkg" ]; then
+              echo "ERROR: missing native package @img/$pkg in combined layer" >&2
+              exit 1
+            fi
+          done
 
       - name: Package Lambda layer (${{ matrix.arch }})
         run: |
-          mkdir -p nodejs/node_modules/sharp/lib
-          mv node_modules/sharp/package.json nodejs/node_modules/sharp/
-          mv index.js nodejs/node_modules/sharp/lib/
-          mv node_modules/sharp/lib/index.d.ts nodejs/node_modules/sharp/lib/
-          mv node_modules/sharp/LICENSE nodejs/node_modules/sharp/
-          mv node_modules/@img nodejs/node_modules/ || true
+          mkdir -p nodejs/node_modules
+          mv node_modules/sharp nodejs/node_modules/
+          mv node_modules/@img  nodejs/node_modules/
+          rm -rf nodejs/node_modules/sharp/src   # drop C++ sources, keep the layer small
           zip -r release-${{ matrix.arch }} nodejs
 
       - name: Clean up
@@ -92,7 +96,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repo
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Download x64 artifact
         uses: actions/download-artifact@v4
@@ -117,7 +121,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
