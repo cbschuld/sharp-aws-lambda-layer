@@ -76,9 +76,11 @@ jobs:
 
       - name: Package Lambda layer (${{ matrix.arch }})
         run: |
-          mkdir -p nodejs/node_modules
-          mv node_modules/sharp nodejs/node_modules/
-          mv node_modules/@img  nodejs/node_modules/
+          # Ship the whole tree so sharp's runtime deps (detect-libc, semver, ...)
+          # come along — not just sharp + @img.
+          mkdir -p nodejs
+          mv node_modules nodejs/node_modules
+          rm -rf nodejs/node_modules/.package-lock.json nodejs/node_modules/.bin
           rm -rf nodejs/node_modules/sharp/src   # drop C++ sources, keep the layer small
           zip -r release-${{ matrix.arch }} nodejs
 
